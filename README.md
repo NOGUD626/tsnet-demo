@@ -20,6 +20,8 @@
 
 ## アーキテクチャ
 
+### 全体構成 (ASCII)
+
 ```
 [実行マシン]                                  [自前 tailnet]                    [subnet router の先の LAN]
 
@@ -35,6 +37,39 @@
           ▼
        [ピア 100.64.0.2] ─── subnet router (--accept-routes) ──► LAN ホスト
                                                                   ICMP / TCP
+```
+
+### 通信シーケンス (Mermaid)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as tsnet-demo<br/>(Go プロセス)
+    participant HS as Headscale<br/>(自前)
+    participant Peer as tailnet ピア<br/>(例: 100.64.0.2)
+
+    App->>HS: srv.Up() / TLS 443 + WebSocket Upgrade (ts2021)
+    HS-->>App: NetworkMap (peers + ACL + DERP map)
+    App->>Peer: srv.Dial("100.64.0.2:22")<br/>WireGuard over P2P or DERP
+    Peer-->>App: TCP connection + SSH banner
+    App->>Peer: lc.Ping(addr, PingDisco)
+    Peer-->>App: pong (latency + endpoint or DERP region)
+    Note over App,Peer: RouteAll=true なら<br/>subnet router 経由で<br/>LAN ホストにも到達
+```
+
+### 内部スタック (Mermaid フロー)
+
+```mermaid
+flowchart TB
+    A["アプリ: srv.Dial(100.64.0.2:22)"] --> B[gVisor netstack]
+    B -->|"IP packet"| C[wgengine]
+    C -->|peer lookup| D[wireguard-go]
+    D -->|Noise + ChaCha20-Poly1305| E[magicsock.Conn]
+    E -->|"(a) Direct UDP (STUN hole-punching)"| F[peer の wireguard-go]
+    E -->|"(b) DERP relay (TLS 443)"| G[自前 DERP region 900]
+    G --> F
+    F --> H[peer の OS]
+    H -->|"sshd"| I[SSH banner]
 ```
 
 ## 前提
