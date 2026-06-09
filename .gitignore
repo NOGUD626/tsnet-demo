@@ -1,0 +1,4 @@
+tsnet-state/
+tsnet-demo
+*.exe
+.env
